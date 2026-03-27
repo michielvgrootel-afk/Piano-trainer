@@ -1,0 +1,209 @@
+﻿Context
+The user wants to build a "Guitar Hero for Piano" — an Electron desktop app that connects to any MIDI keyboard, lets users upload sheet music (including PDFs), and provides a falling-notes tutorial with scoring and progressive difficulty. This is a new project built at piano-trainer/.
+Problem: Learning piano from sheet music is hard. There's no easy, plug-and-play tool that combines real MIDI keyboard input with Guitar Hero-style visual guidance and gamification.
+Outcome: A desktop Electron app where users connect a MIDI keyboard, upload songs (MIDI, MusicXML, or PDF sheet music), and play along with falling notes, getting scored on accuracy. PDFs are converted to playable note data via OMR (Audiveris).
+________________
+
+
+Tech Stack
+Concern
+	Choice
+	Desktop Shell
+	Electron (Chromium + Node.js)
+	Build
+	Vite + TypeScript + electron-builder
+	MIDI Input
+	Web MIDI API (native in Chromium)
+	MIDI Parsing
+	@tonejs/midi
+	Sheet Music
+	opensheetmusicdisplay (OSMD) for MusicXML rendering
+	Audio
+	Tone.js + soundfont samples
+	Falling Notes
+	HTML5 Canvas 2D
+	Storage
+	Dexie.js (IndexedDB) — persists in Electron's userData
+	PDF → MusicXML
+	Audiveris (open-source OMR, Java) — bundled or user-installed
+	PDF/OMR Strategy: Audiveris is a mature open-source OMR engine that converts PDF/image sheet music into MusicXML. We bundle the Audiveris JAR + a portable JRE (e.g., Eclipse Temurin JRE, ~50MB compressed) inside the Electron app so the user never needs to install Java themselves. The main process spawns Audiveris as a child process. Flow: PDF → Audiveris CLI → MusicXML → our MusicXML parser → NoteSequence → falling notes. True plug-and-play — drop a PDF, get playable notes.
+________________
+
+
+Project Structure
+piano-trainer/
+  package.json
+  tsconfig.json
+  vite.config.ts
+  electron/
+    main.ts             # Electron main process
+    preload.ts          # Preload script (IPC bridge)
+  public/
+    tutorials/          # Built-in lesson JSON files
+  src/
+    index.html          # Renderer entry HTML
+    main.ts             # Renderer entry point
+    types.ts            # All shared interfaces
+    core/
+      midi-access.ts    # Web MIDI API connection + events
+      midi-parser.ts    # .mid file -> NoteSequence
+      musicxml-parser.ts # MusicXML -> NoteSequence
+      omr-bridge.ts     # PDF -> Audiveris CLI -> MusicXML (via IPC to main process)
+      note-sequence.ts  # Unified song format
+      audio-engine.ts   # Tone.js playback + soundfont
+      timing.ts         # Centralized clock (single source of truth)
+    game/
+      game-engine.ts    # Main game loop (rAF)
+      input-matcher.ts  # Compare MIDI input to expected notes
+      score-tracker.ts  # Hits/misses/wrong -> ScoreReport
+    visualization/
+      canvas-renderer.ts  # Falling notes on Canvas
+      piano-keyboard.ts   # Virtual keyboard (lights up)
+      sheet-music-view.ts # OSMD wrapper with cursor sync
+    ui/
+      app-shell.ts      # Layout + navigation
+      styles.ts         # CSS
+      screens/
+        home-screen.ts       # Song library + upload
+        play-screen.ts       # Gameplay (sheet music top, falling notes bottom)
+        results-screen.ts    # Score breakdown
+        tutorial-select.ts   # Browse lessons by difficulty
+        settings-screen.ts   # MIDI device, audio settings
+      components/
+        speed-control.ts     # Playback speed slider
+        chord-display.ts     # Toggle chord name overlay
+        midi-status.ts       # Connection indicator
+        file-upload.ts       # Drag-and-drop upload
+    data/
+      db.ts              # Dexie database schema
+      song-store.ts      # Song CRUD
+      progress-store.ts  # Scores + tutorial progress
+      tutorial-loader.ts # Load built-in lessons
+    utils/
+      note-utils.ts      # MIDI note <-> name conversion
+      chord-detector.ts  # Identify chords from note clusters
+      time-utils.ts      # Beat/tick/second conversions
+________________
+
+
+Layout (Play Screen)
++--------------------------------------------------+
+|  [Speed: 0.5x - 2.0x]  [Chords: ON/OFF]  [MIDI] |
++--------------------------------------------------+
+|                                                    |
+|        Sheet Music (OSMD with cursor)              |
+|        ~25% height                                 |
+|                                                    |
++--------------------------------------------------+
+|                                                    |
+|        Falling Notes (Canvas)                      |
+|        Notes fall toward hit line                  |
+|        ~60% height                                 |
+|                                                    |
+|  ---- hit line ------------------------------------|
+|  [Piano Keyboard - keys light up]  ~15% height    |
++--------------------------------------------------+
+________________
+
+
+Implementation Phases
+Phase 1: Foundation (MVP)
+Goal: Electron app with MIDI input + falling notes for a hardcoded song.
+Create:
+* Project scaffolding (package.json, vite.config.ts, tsconfig.json)
+* electron/main.ts — Electron main process (window creation, IPC handlers)
+* electron/preload.ts — preload script exposing safe IPC bridge to renderer
+* src/index.html — renderer entry HTML
+* src/types.ts — all core interfaces
+* src/core/midi-access.ts — MIDI keyboard detection + note events
+* src/visualization/canvas-renderer.ts — falling notes (hardcoded test data)
+* src/visualization/piano-keyboard.ts — virtual keyboard
+* src/ui/app-shell.ts + src/ui/styles.ts — basic layout
+* src/main.ts — wire it together
+Deliverable: Electron window with falling notes + virtual keyboard. MIDI keyboard lights up keys.
+Phase 2: File Parsing + Audio
+Goal: Upload MIDI files, hear playback, see synced falling notes.
+Create:
+* src/core/midi-parser.ts — .mid -> NoteSequence
+* src/core/note-sequence.ts — unified format
+* src/core/audio-engine.ts — Tone.js + soundfont
+* src/core/timing.ts — centralized clock
+* src/ui/components/file-upload.ts — upload widget
+* src/ui/components/speed-control.ts — speed slider
+Deliverable: Upload .mid, hear it play, notes fall in sync, adjust speed.
+Phase 3: Input Matching + Scoring
+Goal: Score player performance.
+Create:
+* src/game/game-engine.ts — orchestrator
+* src/game/input-matcher.ts — hit detection (+/- 200ms window)
+* src/game/score-tracker.ts — accuracy tracking
+* src/ui/screens/play-screen.ts — gameplay screen
+* src/ui/screens/results-screen.ts — score display (grade: S/A/B/C/D/F)
+Deliverable: Play along, get scored with accuracy % and letter grade.
+Phase 4: MusicXML + Sheet Music
+Goal: MusicXML support with rendered sheet music.
+Create:
+* src/core/musicxml-parser.ts — MusicXML -> NoteSequence
+* src/visualization/sheet-music-view.ts — OSMD rendering + cursor
+* Update play-screen.ts for split layout (sheet music top, canvas bottom)
+Deliverable: Upload .musicxml, see score with cursor + falling notes, synchronized.
+Phase 5: Persistence + Song Library
+Goal: Save songs and scores locally.
+Create:
+* src/data/db.ts — Dexie schema (songs, scores, progress tables)
+* src/data/song-store.ts + src/data/progress-store.ts
+* src/ui/screens/home-screen.ts — song library
+Deliverable: Songs persist. Past scores viewable.
+Phase 6: Tutorials + Gamification
+Goal: Built-in progressive lessons with chord display.
+Create:
+* public/tutorials/*.json — 15-20 lessons (beginner to expert)
+* src/data/tutorial-loader.ts
+* src/ui/screens/tutorial-select.ts — difficulty tree with unlock system
+* src/ui/components/chord-display.ts + src/utils/chord-detector.ts
+* Stars (1-3) based on score. Prerequisites gate harder lessons.
+Tutorial Progression:
+* Level 1: Middle C, basic notes, first chord
+* Level 2: Full octave, both hands, eighth notes
+* Level 3: Scales, minor chords, simple melodies
+* Level 4: Arpeggios, two-hand independence
+* Level 5: Complex rhythms, full songs
+Phase 7: PDF/OMR Support (Bundled Audiveris)
+Goal: Upload a PDF of sheet music and have it automatically converted to playable notes. Zero setup for the user.
+Create:
+* resources/jre/ — bundled portable JRE (Eclipse Temurin, ~50MB compressed, platform-specific)
+* resources/audiveris/ — Audiveris JAR + dependencies
+* src/core/omr-bridge.ts — renderer-side IPC calls to trigger Audiveris
+* IPC handler in electron/main.ts — spawns bundled JRE + Audiveris CLI: <bundled-jre>/bin/java -jar <bundled-audiveris>.jar -batch -export -output <tmpDir> <input.pdf>
+* Progress UI — show "Converting PDF..." with progress spinner while Audiveris runs (can take 10-30s)
+* Error handling — if bundled JRE is corrupted/missing, show re-install prompt
+* Update file-upload.ts to accept .pdf, .png, .jpg in addition to .mid, .musicxml
+* electron-builder extraResources config to include JRE + Audiveris in the packaged app
+Flow: User drops PDF → main process runs bundled Audiveris → produces MusicXML in temp dir → renderer reads MusicXML → existing parser pipeline takes over. No Java installation required.
+Phase 8: Polish
+* 3-2-1 countdown before songs
+* Note hit animations (glow/particles)
+* Settings screen (MIDI device, latency calibration)
+* electron-builder config for packaging/distribution (with bundled JRE + Audiveris as extraResources)
+* Auto-updater setup
+________________
+
+
+Key Technical Notes
+1. Synchronization: All modules (Canvas, audio, OSMD cursor, input matcher) read from a single clock in timing.ts. This prevents drift.
+2. Hit window: +/- 200ms default, adjustable by difficulty. Notes outside the window = missed.
+3. Canvas performance: Only render notes within [currentTime - 1s, currentTime + visibleWindow]. Culling keeps it under ~100 notes/frame.
+4. Audio latency: Settings screen includes a calibration step to measure round-trip latency and offset input timestamps.
+5. Chord detection: When 3+ simultaneous notes match a known chord pattern, display the chord name (e.g., "Cmaj", "Am7").
+________________
+
+
+Verification Plan
+1. Phase 1: npm run dev launches Electron window. Connect MIDI keyboard, verify keys light up on virtual keyboard. Confirm falling notes render smoothly at 60fps.
+2. Phase 2: Upload a .mid file, verify audio plays and notes fall in sync. Change speed, verify sync is maintained.
+3. Phase 3: Play along with a song, verify hits/misses are detected correctly. Check results screen shows accurate score.
+4. Phase 4: Upload .musicxml, verify OSMD renders notation and cursor moves in sync with falling notes.
+5. Phase 5: Upload a song, close and reopen the app, verify song persists.
+6. Phase 6: Complete a tutorial, verify it shows as completed, and the next lesson unlocks.
+7. Phase 7: Upload a PDF of sheet music, verify Audiveris converts it and falling notes appear. Test error case (no Java installed) shows helpful message.
+8. Phase 8: Run npm run build to produce distributable. Verify packaged app launches and works standalone.
