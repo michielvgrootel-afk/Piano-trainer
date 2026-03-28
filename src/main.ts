@@ -299,7 +299,48 @@ async function startPlayScreen(notes: Note[]) {
   const pianoCanvas = document.createElement('canvas');
   pianoSection.appendChild(pianoCanvas);
 
-  main.append(sheetSection, fallingSection, pianoSection);
+  // Playback controls bar
+  const controlsBar = document.createElement('div');
+  controlsBar.className = 'playback-controls';
+
+  const playPauseBtn = document.createElement('button');
+  playPauseBtn.className = 'btn btn-small playback-btn';
+  playPauseBtn.textContent = '\u275A\u275A'; // pause icon
+  playPauseBtn.title = 'Pause / Resume';
+
+  const restartBtn = document.createElement('button');
+  restartBtn.className = 'btn btn-small playback-btn';
+  restartBtn.textContent = '\u21BA'; // restart icon
+  restartBtn.title = 'Restart';
+
+  const rewindBtn = document.createElement('button');
+  rewindBtn.className = 'btn btn-small playback-btn';
+  rewindBtn.textContent = '\u00AB 5s';
+  rewindBtn.title = 'Rewind 5 seconds';
+
+  const forwardBtn = document.createElement('button');
+  forwardBtn.className = 'btn btn-small playback-btn';
+  forwardBtn.textContent = '5s \u00BB';
+  forwardBtn.title = 'Forward 5 seconds';
+
+  const timeDisplay = document.createElement('span');
+  timeDisplay.className = 'time-display';
+  timeDisplay.textContent = '0:00 / 0:00';
+
+  const progressContainer = document.createElement('div');
+  progressContainer.className = 'progress-container';
+  const progressBar = document.createElement('div');
+  progressBar.className = 'progress-bar';
+  const progressFill = document.createElement('div');
+  progressFill.className = 'progress-fill';
+  const progressHandle = document.createElement('div');
+  progressHandle.className = 'progress-handle';
+  progressBar.append(progressFill, progressHandle);
+  progressContainer.appendChild(progressBar);
+
+  controlsBar.append(restartBtn, rewindBtn, playPauseBtn, forwardBtn, timeDisplay, progressContainer);
+
+  main.append(sheetSection, fallingSection, controlsBar, pianoSection);
 
   // Initialize renderers
   const keyboard = new PianoKeyboard(pianoCanvas);
@@ -348,6 +389,7 @@ async function startPlayScreen(notes: Note[]) {
     gameState = 'finished';
     cancelAnimationFrame(animationId);
     window.removeEventListener('resize', resize);
+    window.removeEventListener('keydown', handleKeydown);
     removeMidiListener();
     clock.pause();
     audioEngine.stop();
@@ -371,6 +413,105 @@ async function startPlayScreen(notes: Note[]) {
     }
   });
 
+  // Compute song duration
+  let songDuration = 0;
+  for (const n of notes) {
+    const end = n.startTime + n.duration;
+    if (end > songDuration) songDuration = end;
+  }
+
+  // Helper to format time as m:ss
+  function formatTime(sec: number): string {
+    const s = Math.max(0, Math.floor(sec));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  // Helper to seek to a specific time
+  let isPaused = false;
+  function seekTo(time: number) {
+    const clampedTime = Math.max(0, Math.min(time, songDuration));
+    clock.seekTo(clampedTime);
+    highlightPointer = 0; // reset scan pointer
+    // Reschedule audio from new position
+    const speed = clock.speed;
+    audioEngine.stop();
+    const remainingNotes = notes.filter(n => n.startTime + n.duration > clampedTime);
+    const transportOffset = clampedTime > 0 ? 0 : -clampedTime / speed;
+    const adjustedNotes = remainingNotes.map(n => ({
+      ...n,
+      startTime: n.startTime - clampedTime,
+    }));
+    audioEngine.scheduleNotes(adjustedNotes, speed, transportOffset);
+    if (!isPaused) {
+      audioEngine.play();
+    }
+  }
+
+  // Playback control handlers
+  playPauseBtn.addEventListener('click', () => {
+    if (isPaused) {
+      isPaused = false;
+      playPauseBtn.textContent = '\u275A\u275A';
+      clock.start();
+      audioEngine.play();
+      game.resume();
+    } else {
+      isPaused = true;
+      playPauseBtn.textContent = '\u25B6';
+      clock.pause();
+      audioEngine.pause();
+      game.pause();
+    }
+  });
+
+  restartBtn.addEventListener('click', () => {
+    seekTo(0);
+    renderer.setNotes(notes); // clear hit/miss state
+    game.setup(notes, shell.getConfig());
+    game.start();
+  });
+
+  rewindBtn.addEventListener('click', () => {
+    seekTo(clock.currentTime - 5);
+  });
+
+  forwardBtn.addEventListener('click', () => {
+    seekTo(clock.currentTime + 5);
+  });
+
+  // Progress bar click-to-seek
+  let isSeeking = false;
+  const handleProgressSeek = (e: MouseEvent) => {
+    const rect = progressBar.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekTo(pct * songDuration);
+  };
+  progressBar.addEventListener('mousedown', (e) => {
+    isSeeking = true;
+    handleProgressSeek(e);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (isSeeking) handleProgressSeek(e);
+  });
+  window.addEventListener('mouseup', () => {
+    isSeeking = false;
+  });
+
+  // Keyboard shortcuts
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      playPauseBtn.click();
+    } else if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      seekTo(clock.currentTime - 5);
+    } else if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      seekTo(clock.currentTime + 5);
+    }
+  };
+  window.addEventListener('keydown', handleKeydown);
+
   // Setup timing
   clock.reset(2);
   clock.setSpeed(config.speed);
@@ -383,17 +524,17 @@ async function startPlayScreen(notes: Note[]) {
     const currentTime = clock.currentTime;
     clock.setSpeed(s);
     audioEngine.stop();
-    // Reschedule only notes that haven't been played yet
     const remainingNotes = notes.filter(n => n.startTime > currentTime);
     const offset = currentTime > 0 ? 0 : -currentTime / s;
     audioEngine.scheduleNotes(remainingNotes, s, offset);
-    audioEngine.play();
+    if (!isPaused) audioEngine.play();
   };
 
   // Back button
   shell.onBack = () => {
     cancelAnimationFrame(animationId);
     window.removeEventListener('resize', resize);
+    window.removeEventListener('keydown', handleKeydown);
     removeMidiListener();
     clock.pause();
     audioEngine.stop();
@@ -462,6 +603,12 @@ async function startPlayScreen(notes: Note[]) {
     renderer.render(time);
     highlightActiveNotes(time);
     keyboard.render();
+
+    // Update progress bar and time display
+    const pct = songDuration > 0 ? Math.max(0, Math.min(100, (time / songDuration) * 100)) : 0;
+    progressFill.style.width = `${pct}%`;
+    progressHandle.style.left = `${pct}%`;
+    timeDisplay.textContent = `${formatTime(time)} / ${formatTime(songDuration)}`;
 
     animationId = requestAnimationFrame(gameLoop);
   }

@@ -121,6 +121,85 @@ export function injectStyles() {
       height: 100%;
     }
 
+    /* ===== Playback Controls ===== */
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #16162a;
+      border-top: 1px solid #2a2a4a;
+      border-bottom: 1px solid #2a2a4a;
+      flex-shrink: 0;
+      height: 40px;
+      z-index: 5;
+    }
+
+    .playback-btn {
+      min-width: 36px;
+      text-align: center;
+      font-size: 14px;
+      padding: 4px 8px;
+    }
+
+    .time-display {
+      font-size: 12px;
+      color: #aaa;
+      font-variant-numeric: tabular-nums;
+      min-width: 90px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .progress-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .progress-bar {
+      flex: 1;
+      height: 6px;
+      background: #2a2a4a;
+      border-radius: 3px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .progress-bar:hover {
+      height: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #4FC3F7;
+      border-radius: 3px;
+      width: 0%;
+      pointer-events: none;
+      transition: none;
+    }
+
+    .progress-handle {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      width: 14px;
+      height: 14px;
+      background: #4FC3F7;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .progress-bar:hover .progress-handle,
+    .progress-handle.active {
+      opacity: 1;
+    }
+
     /* ===== Piano Keyboard Section ===== */
     .piano-section {
       flex-shrink: 0;

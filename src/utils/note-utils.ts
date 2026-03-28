@@ -29,9 +29,9 @@ export function getNoteColor(track: number, hit: boolean = false): string {
   return track === 0 ? '#4FC3F7' : '#81C784'; // blue for right, green for left
 }
 
-/** 76-key keyboard range: E1 (28) to E7 (88) */
-export const PIANO_MIN = 28;
-export const PIANO_MAX = 88;
+/** Full 88-key keyboard range: A0 (21) to C8 (108) */
+export const PIANO_MIN = 21;
+export const PIANO_MAX = 108;
 export const PIANO_KEYS = PIANO_MAX - PIANO_MIN + 1;
 
 /** Get all white key MIDI numbers in the piano range */
