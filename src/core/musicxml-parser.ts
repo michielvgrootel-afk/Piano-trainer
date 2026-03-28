@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { Note, NoteSequence } from '../types';
 import { midiToName } from '../utils/note-utils';
 import { sortNotes, getSequenceDuration } from './note-sequence';
@@ -147,4 +148,31 @@ function pitchToMidi(step: string, alter: number, octave: number): number {
 export async function parseMusicXmlFromFile(file: File): Promise<NoteSequence> {
   const text = await file.text();
   return parseMusicXml(text);
+}
+
+/**
+ * Read a .mxl (compressed MusicXML) File and parse it.
+ * MXL is a ZIP archive containing a .musicxml or .xml file.
+ */
+export async function parseMxlFromFile(file: File): Promise<NoteSequence> {
+  const buf = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+
+  // Look for the MusicXML file inside the archive
+  let xmlContent: string | null = null;
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    if (name.endsWith('.musicxml') || name.endsWith('.xml')) {
+      // Prefer .musicxml over .xml, skip META-INF files
+      if (name.startsWith('META-INF')) continue;
+      xmlContent = await entry.async('string');
+      if (name.endsWith('.musicxml')) break; // prefer .musicxml
+    }
+  }
+
+  if (!xmlContent) {
+    throw new Error('No MusicXML file found inside .mxl archive');
+  }
+
+  return parseMusicXml(xmlContent);
 }

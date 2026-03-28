@@ -6,7 +6,7 @@ import { midiAccess } from './core/midi-access';
 import { clock } from './core/timing';
 import { audioEngine } from './core/audio-engine';
 import { parseMidiFileFromFile } from './core/midi-parser';
-import { parseMusicXmlFromFile } from './core/musicxml-parser';
+import { parseMusicXmlFromFile, parseMxlFromFile } from './core/musicxml-parser';
 import { convertPdfToNoteSequence, isOmrAvailable } from './core/omr-bridge';
 import { GameEngine } from './game/game-engine';
 import { detectChord } from './utils/chord-detector';
@@ -57,7 +57,7 @@ function showHomeScreen() {
   dropText.textContent = 'Drop a file here or click to upload';
   const dropFormats = document.createElement('div');
   dropFormats.className = 'drop-zone-formats';
-  dropFormats.textContent = 'Supports: .mid, .midi, .musicxml, .xml, .pdf';
+  dropFormats.textContent = 'Supports: .mid, .midi, .musicxml, .mxl, .xml, .pdf';
   dropZone.append(dropText, dropFormats);
 
   const loadingText = document.createElement('div');
@@ -69,7 +69,7 @@ function showHomeScreen() {
 
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.mid,.midi,.musicxml,.xml,.pdf';
+  fileInput.accept = '.mid,.midi,.musicxml,.mxl,.xml,.pdf';
   fileInput.style.display = 'none';
   fileInput.addEventListener('change', () => {
     if (fileInput.files?.[0]) {
@@ -166,13 +166,15 @@ async function handleFileUpload(file: File, dropText: HTMLElement, loadingText: 
         loadingText.style.color = '#4FC3F7';
       }, 3000);
     }
-  } else if (ext === 'musicxml' || ext === 'xml') {
+  } else if (ext === 'musicxml' || ext === 'xml' || ext === 'mxl') {
     dropText.style.display = 'none';
     loadingText.style.display = 'block';
     loadingText.textContent = `Parsing ${file.name}...`;
 
     try {
-      const sequence = await parseMusicXmlFromFile(file);
+      const sequence = ext === 'mxl'
+        ? await parseMxlFromFile(file)
+        : await parseMusicXmlFromFile(file);
       currentTitle = sequence.title !== 'Untitled' ? sequence.title : file.name.replace(/\.[^.]+$/, '');
       activeTutorialId = null;
       await saveSong(currentTitle, file.name, 'musicxml', sequence).catch(() => {});

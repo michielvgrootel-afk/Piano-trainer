@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { join, basename } from 'path';
 import { execFile, ChildProcess } from 'child_process';
 import { existsSync, readFileSync, mkdirSync } from 'fs';
@@ -33,7 +34,36 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+// ===== Auto-Updater =====
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+autoUpdater.on('update-downloaded', () => {
+  if (!mainWindow) return;
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Update Ready',
+    message: 'Update downloaded. The app will restart to install it.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+});
+
+autoUpdater.on('error', (err) => {
+  console.error('Auto-updater error:', err);
+});
+
+app.whenReady().then(() => {
+  createWindow();
+  // Check for updates after a short delay (skip in dev)
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    setTimeout(() => autoUpdater.checkForUpdates(), 3000);
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
